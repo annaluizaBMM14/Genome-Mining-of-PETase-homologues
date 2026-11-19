@@ -1,0 +1,31 @@
+
+#!/bin/bash
+
+PASTA_PROKKA="resultados_prokka_data"
+BANCO_FA="$HOME/bdpet.fasta"
+NOME_BANCO="bdpet"
+PASTA_RESULTADOS="resultados_blastp_data"
+
+mkdir -p "$PASTA_RESULTADOS"
+
+if [ ! -f "${NOME_BANCO}.pin" ]; then
+    echo "Creating BLAST database..."
+    makeblastdb -in "$BANCO_FA" -dbtype prot -out "$NOME_BANCO"
+else
+    echo "BLAST database already exists."
+fi
+
+for faa in "$PASTA_PROKKA"/*/*.faa; do
+    # Genome name = subdirectory name
+    genoma=$(basename "$(dirname "$faa")")
+
+    echo "Running BLAST for $genoma..."
+
+    blastp -query "$faa" \
+           -db "$NOME_BANCO" \
+           -evalue 1e-5 \
+           -out "${PASTA_RESULTADOS}/${genoma}_vs_bdpet.txt" \
+           -outfmt 6
+done
+
+echo "All results have been saved to: $PASTA_RESULTADOS"
