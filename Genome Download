@@ -1,0 +1,82 @@
+#!/bin/bash
+
+LIST_GCF="baixar_genomas.txt"
+
+OUTPUT_DIR="downloaded_genomes"
+mkdir -p "$OUTPUT_DIR"
+
+ASSEMBLY_SUMMARY="assembly_summary.txt"
+
+# Download the NCBI assembly summary if it is not available locally
+if [ ! -f "$ASSEMBLY_SUMMARY" ]; then
+    echo "Downloading assembly_summary.txt from NCBI..."
+    wget -q https://ftp.ncbi.nlm.nih.gov/genomes/refseq/bacteria/assembly_summary.txt \
+        -O "$ASSEMBLY_SUMMARY"
+
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to download assembly_summary.txt."
+        exit 1
+    fi
+fi
+
+# Process each GCF accession in the input list
+while read -r GCF; do
+
+    # Remove extra whitespace and carriage returns
+    GCF=$(echo "$GCF" | tr -d ' \r\t\n')
+
+    if [[ -z "$GCF" ]]; then
+        continue
+    fi
+
+    echo "Processing $GCF..."
+
+    # Find the corresponding assembly information
+    LINE=$(grep -P "^${GCF}\t" "$ASSEMBLY_SUMMARY")
+
+    if [[ -z "$LINE" ]]; then
+        echo "Warning: $GCF not found in assembly_summary.txt."
+        continue
+    fi
+
+    # Extract the FTP download path (column 20)
+    FTP_PATH=$(echo "$LINE" | cut -f20)
+
+    if [[ -z "$FTP_PATH" || "$FTP_PATH" == "na" ]]; then
+        echo "Warning: FTP path not available for $GCF."
+        continue
+    fi
+
+    # Construct the genome download URL
+    BASENAME=$(basename "$FTP_PATH")
+    GENOME_FILE="${BASENAME}_genomic.fna.gz"
+    URL="${FTP_PATH}/${GENOME_FILE}"
+
+    OUTPUT_GZ="${OUTPUT_DIR}/${GENOME_FILE}"
+    OUTPUT_FNA="${OUTPUT_DIR}/${BASENAME}_genomic.fna"
+
+    # Download the genome sequence
+    echo "Downloading $URL..."
+    wget -q --show-progress -O "$OUTPUT_GZ" "$URL"
+
+    if [[ $? -ne 0 ]]; then
+        echo "Error: Failed to download $URL."
+        rm -f "$OUTPUT_GZ"
+        continue
+    fi
+
+    # Validate the downloaded compressed file
+    if ! gzip -t "$OUTPUT_GZ" 2>/dev/null; then
+        echo "Error: Corrupted or incomplete file: $OUTPUT_GZ."
+        rm -f "$OUTPUT_GZ"
+        continue
+    fi
+
+    # Extract the genome sequence
+    gunzip -f "$OUTPUT_GZ"
+
+    echo "Genome successfully saved: $OUTPUT_FNA"
+
+done < "$LIST_GCF"
+
+echo "Genome downloads and extraction completed."
